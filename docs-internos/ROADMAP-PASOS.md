@@ -390,7 +390,7 @@ Validar que compile sin errores.
 
 ## Paso 1.5: Implementar afterSwap hook
 
-**Estado:** ⚪
+**Estado:** ✅ **COMPLETADO**
 
 ### ¿Qué hacer?
 
@@ -426,6 +426,31 @@ Requisitos:
 
 Validar que compile sin errores.
 ```
+
+### Verificación
+
+✅ **Implementación completada:**
+- Función `_afterSwap()` implementada en `src/AntiSandwichHook.sol`
+- Lectura de precio actual después del swap usando `poolManager.getSlot0(poolId)` ✅
+- Obtención de `tradeSize` desde `params.amountSpecified` (conversión de `int256` a `uint256` con `abs()`) ✅
+- Actualización de `lastPrice = sqrtPriceX96` ✅
+- Actualización de `avgTradeSize` usando promedio móvil:
+  - Si `avgTradeSize == 0`: inicializa con `tradeSize`
+  - Si no: `avgTradeSize = (avgTradeSize * 9 + tradeSize) / 10` ✅
+- Cálculo de `relativeSize = tradeSize / avgTradeSize` (con manejo de división por cero) ✅
+- Actualización de `recentSpikeCount`:
+  - Si `relativeSize > SPIKE_THRESHOLD (5)`: incrementa contador (capado a 255)
+  - Si no: resetea contador a 0 ✅
+- Actualización de `lastTradeSize = tradeSize` ✅
+- Evento `MetricsUpdated` emitido con todas las métricas ✅
+- Manejo de edge cases:
+  - Pool no inicializado (`sqrtPriceX96 == 0`): skip update
+  - `tradeSize == 0`: skip update
+  - Overflow protection en cálculos de `avgTradeSize` (usando `unchecked` con valores acotados)
+  - Cap en `recentSpikeCount` a 255 para prevenir overflow ✅
+- Comentarios explicativos sobre por qué actualizamos aquí ✅
+- Sin errores de linting ✅
+- Compila sin errores ✅
 
 ### Dependencias
 

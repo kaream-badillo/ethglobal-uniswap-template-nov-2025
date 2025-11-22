@@ -206,21 +206,16 @@ contract AntiSandwichHook is BaseHook {
     }
 
     /// @notice Hook called after a swap
-    /// @dev Will implement metrics update in Paso 1.5
+    /// @dev Implemented in Paso 1.5
     /// @dev Updates historical metrics for risk calculation in next swaps
+    /// @dev This is critical for the hook's functionality - metrics must be updated after each swap
     /// @param sender The address that initiated the swap
     /// @param key The pool key
     /// @param params Swap parameters
     /// @param delta The balance delta from the swap
     /// @param hookData Additional hook data (unused for now)
     /// @return selector The function selector
-    /// @return amount The amount to return (zero for now)
-    /// 
-    /// @notice Implementation notes (Paso 1.5):
-    /// - Get current price after swap: (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(key.toId())
-    /// - Get tradeSize: abs(params.amountSpecified) converted to uint256
-    /// - Update storage: lastPrice, avgTradeSize (moving average), recentSpikeCount
-    /// - Moving average formula: avgTradeSize = (avgTradeSize * 9 + tradeSize) / 10
+    /// @return amount The amount to return (always zero - we don't modify swap amounts)
     function _afterSwap(
         address sender,
         PoolKey calldata key,
@@ -228,20 +223,106 @@ contract AntiSandwichHook is BaseHook {
         BalanceDelta delta,
         bytes calldata hookData
     ) internal override returns (bytes4, int128) {
-        // TODO: Implement in Paso 1.5
-        // 1. Get current price from pool after swap using poolManager.getSlot0(key.toId())
-        // 2. Get tradeSize from params.amountSpecified (convert int256 to uint256 with abs)
-        // 3. Update poolStorage[key.toId()].lastPrice = currentPrice
-        // 4. Update avgTradeSize using moving average:
-        //    - If avgTradeSize == 0: avgTradeSize = tradeSize
-        //    - Else: avgTradeSize = (avgTradeSize * 9 + tradeSize) / 10
-        // 5. Calculate relativeSize = tradeSize / avgTradeSize (handle division by zero)
-        // 6. Update recentSpikeCount:
-        //    - If relativeSize > SPIKE_THRESHOLD (5): recentSpikeCount++
-        //    - Else: recentSpikeCount = 0 (reset counter)
-        // 7. Update poolStorage[key.toId()].lastTradeSize = tradeSize
-        // 8. Emit MetricsUpdated event
+        PoolId poolId = key.toId();
+        PoolStorage storage storage_ = poolStorage[poolId];
         
+        // ============================================================
+        // 1. Get current price from pool after swap (sqrtPriceX96)
+        // ============================================================
+        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
+        
+        // Edge case: If pool is not initialized, skip update
+        if (sqrtPriceX96 == 0) {
+            return (BaseHook.afterSwap.selector, 0);
+        }
+        
+        // ============================================================
+        // 2. Get tradeSize from params.amountSpecified
+        // ============================================================
+        // amountSpecified is int256 (can be positive or negative depending on swap direction)
+        // We need the absolute value to get the trade size
+        uint256 tradeSize;
+        if (params.amountSpecified < 0) {
+            tradeSize = uint256(-params.amountSpecified);
+        } else {
+            tradeSize = uint256(params.amountSpecified);
+        }
+        
+        // Edge case: If tradeSize is 0, skip update
+        if (tradeSize == 0) {
+            return (BaseHook.afterSwap.selector, 0);
+        }
+        
+        // ============================================================
+        // 3. Update lastPrice = current price
+        // ============================================================
+        storage_.lastPrice = sqrtPriceX96;
+        
+        // ============================================================
+        // 4. Update avgTradeSize using simple moving average
+        // ============================================================
+        // Formula: avgTradeSize = (avgTradeSize * 9 + tradeSize) / 10
+        // This gives a 90% weight to historical average and 10% to current trade
+        // If avgTradeSize is 0 (first swap), use tradeSize directly
+        uint256 currentAvgTradeSize = storage_.avgTradeSize;
+        if (currentAvgTradeSize == 0) {
+            // First swap: initialize with current trade size
+            storage_.avgTradeSize = tradeSize;
+        } else {
+            // Moving average: (avgTradeSize * 9 + tradeSize) / 10
+            // To prevent overflow, we calculate: (currentAvgTradeSize * 9 + tradeSize) / 10
+            // Using unchecked for gas optimization (we know the values are bounded)
+            unchecked {
+                storage_.avgTradeSize = (currentAvgTradeSize * 9 + tradeSize) / 10;
+            }
+        }
+        
+        // ============================================================
+        // 5. Calculate relativeSize = tradeSize / avgTradeSize
+        // ============================================================
+        // This is used to determine if this is a "spike" (large trade)
+        uint256 relativeSize = 0;
+        uint256 updatedAvgTradeSize = storage_.avgTradeSize;
+        if (updatedAvgTradeSize > 0) {
+            // Calculate relative size: how many times larger than average
+            relativeSize = (tradeSize * 100) / updatedAvgTradeSize; // Scale by 100 for precision
+            relativeSize = relativeSize / 100; // Normalize back
+        }
+        
+        // ============================================================
+        // 6. Update recentSpikeCount based on relativeSize
+        // ============================================================
+        // If relativeSize > SPIKE_THRESHOLD (5), increment counter
+        // Otherwise, reset counter (no consecutive spikes)
+        if (relativeSize > SPIKE_THRESHOLD) {
+            // Large trade detected: increment spike count
+            // Cap at 255 to prevent overflow (uint8 max)
+            if (storage_.recentSpikeCount < 255) {
+                storage_.recentSpikeCount++;
+            }
+        } else {
+            // Normal trade: reset spike count
+            storage_.recentSpikeCount = 0;
+        }
+        
+        // ============================================================
+        // 7. Update lastTradeSize for future reference
+        // ============================================================
+        storage_.lastTradeSize = tradeSize;
+        
+        // ============================================================
+        // 8. Emit event for logging and monitoring
+        // ============================================================
+        emit MetricsUpdated(
+            poolId,
+            sqrtPriceX96,
+            storage_.avgTradeSize,
+            storage_.recentSpikeCount
+        );
+        
+        // ============================================================
+        // 9. Return hook response
+        // ============================================================
         return (BaseHook.afterSwap.selector, 0);
     }
 
