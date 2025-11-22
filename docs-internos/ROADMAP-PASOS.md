@@ -156,7 +156,7 @@ Crear las interfaces necesarias de Uniswap v4 y la estructura base del contrato 
 ### ¿Qué pedir a la IA?
 
 ```
-Crea el contrato base AntiSandwichHook.sol basándote en cursor/project-context.md y docs-internos/idea-general.md.
+Crea el contrato base AntiSandwichHook.sol basándote en cursor/project-context.md y docs-internos/idea-general.md., uniswap-LLMs.txt, y revisa el README-INERNO si te sirve algun doc de ahi
 
 Requisitos:
 1. Heredar de BaseHook (OpenZeppelin)
@@ -196,7 +196,7 @@ Referencias:
 
 ## Paso 1.2: Implementar cálculo de riskScore
 
-**Estado:** ⚪
+**Estado:** ✅ **COMPLETADO**
 
 ### ¿Qué hacer?
 
@@ -229,6 +229,22 @@ Requisitos:
 
 NO implementar beforeSwap todavía, solo la función interna.
 ```
+
+### Verificación
+
+✅ **Implementación completada:**
+- Función `_calculateRiskScore()` implementada en `src/AntiSandwichHook.sol`
+- Manejo de edge cases:
+  - `avgTradeSize == 0`: `relativeSize = 1` (primera vez)
+  - `lastPrice == 0`: `deltaPriceNormalized = 0` (primera vez)
+- Normalización de valores para prevenir overflow:
+  - `relativeSize` capado a máximo 10 (10x el promedio)
+  - `deltaPrice` normalizado dividiendo por 1e14 y capado a máximo 10
+  - `recentSpikeCount` capado a máximo 10
+- Fórmula implementada: `riskScore = (W1 * relativeSize) + (W2 * deltaPrice) + (W3 * recentSpikeCount)`
+- Clamp final a `uint8` (0-255) para prevenir overflow
+- Comentarios explicativos incluidos
+- Sin errores de linting
 
 ### Dependencias
 

@@ -17,6 +17,6 @@ docs/
 # Node modules
 node_modules/
 
-docs-internos
+/docs-internos/
 .cursor
 
