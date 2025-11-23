@@ -8,8 +8,6 @@ out/
 /broadcast/*/5/
 /broadcast/**/dry-run/
 
-# Docs
-docs/
 
 # Internal documentation (should not be in public repo)
 docs-internos/

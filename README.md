@@ -4,6 +4,8 @@
 
 A Uniswap v4 Hook that detects sandwich attack patterns in stable asset markets and dynamically adjusts fees based on risk score, protecting LPs and users without blocking swaps.
 
+> 📖 **For detailed technical documentation, see [Technical Architecture](docs/TECHNICAL-ARCHITECTURE.md)** - Complete technical documentation explaining the mathematics, design decisions, and implementation details.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Solidity](https://img.shields.io/badge/Solidity-^0.8.0-blue.svg)](https://soliditylang.org/)
 [![Foundry](https://img.shields.io/badge/Foundry-Stable-green.svg)](https://getfoundry.sh/)
@@ -88,6 +90,31 @@ The formula has **two terms**:
 
 - **`beforeSwap()`** - Calculates `deltaTick` and applies dynamic fee using continuous formula
 - **`afterSwap()`** - Updates `lastTick` and `avgTradeSize` for future calculations
+
+---
+
+## 📚 Documentation
+
+### Technical Documentation
+
+For a **complete technical deep-dive** into the hook's architecture, mathematics, and design decisions, see:
+
+**[📖 Technical Architecture (docs/TECHNICAL-ARCHITECTURE.md)](docs/TECHNICAL-ARCHITECTURE.md)**
+
+This document explains:
+- **Mathematical foundations** - Why quadratic formula? Why deltaTick?
+- **Architecture details** - Complete hook structure and execution flow
+- **Gas optimizations** - How we achieved 3x efficiency improvement
+- **Security analysis** - Edge cases, attack vectors, and mitigations
+- **Design decisions** - Comparison with other solutions
+
+> 💡 **Complete technical documentation** for judges and developers who want to understand the full technical implementation and optimization rationale.
+
+### Demo Setup
+
+For instructions on running the functional demo, see:
+
+**[🚀 Demo Setup Instructions (docs/DEMO_SETUP.md)](docs/DEMO_SETUP.md)**
 
 ---
 
