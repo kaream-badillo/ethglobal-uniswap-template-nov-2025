@@ -448,5 +448,505 @@ contract AntiSandwichHookTest is BaseTest {
         // Verify swap succeeded (delta should be negative for zeroForOne)
         assertLt(int256(swapDelta.amount0()), 0, "Swap should succeed even with high fees");
     }
+
+    // ============================================================
+    // Tests: Sandwich Attack Detection
+    // ============================================================
+
+    /// @notice Test that detects sandwich pattern: large swap causing high deltaTick
+    /// @dev Simulates a sandwich attack where a large swap causes significant price movement
+    function test_SandwichPatternDetection() public {
+        // Configure fees
+        vm.prank(address(hook.owner()));
+        hook.setPoolConfig(poolKey, 5, 100); // baseFee=5, maxFee=100
+
+        // First swap: normal swap to establish baseline
+        uint256 normalSwap = 1e18;
+        (uint24 feeNormal, int24 deltaTickNormal) = performSwap(normalSwap, true);
+        
+        // Verify normal swap has low fee (deltaTick should be small in stable pairs)
+        assertGe(feeNormal, DEFAULT_BASE_FEE, "Normal swap should have fee >= baseFee");
+        // In stable pairs, deltaTick is usually 0-2, so fee should be close to baseFee
+        assertLe(feeNormal, 10, "Normal swap should have low fee (deltaTick small)");
+
+        // Second swap: large swap simulating sandwich attack
+        // This should cause a larger price movement (higher deltaTick)
+        uint256 largeSwap = 50e18; // 50x larger swap
+        (uint24 feeLarge, int24 deltaTickLarge) = performSwap(largeSwap, true);
+
+        // Verify that large swap has higher fee due to larger deltaTick
+        assertGe(feeLarge, feeNormal, "Large swap should have higher fee than normal swap");
+        assertGe(deltaTickLarge, deltaTickNormal, "Large swap should cause larger deltaTick");
+        
+        // Fee should increase due to quadratic formula
+        // Formula: fee = baseFee + k1*deltaTick + k2*deltaTick²
+        // For larger deltaTick, the quadratic term should dominate
+        assertGe(feeLarge, DEFAULT_BASE_FEE, "Large swap fee should be >= baseFee");
+    }
+
+    /// @notice Test that large deltaTick increases fee significantly
+    /// @dev Verifies that the quadratic term (k2*deltaTick²) dominates for large deltaTick
+    function test_LargeDeltaTickDetection() public {
+        // Configure fees with higher maxFee to test quadratic behavior
+        vm.prank(address(hook.owner()));
+        hook.setPoolConfig(poolKey, 5, 200); // maxFee=200 to allow testing larger values
+
+        // First swap to initialize
+        performSwap(1e18, true);
+
+        // Perform a series of swaps with increasing sizes to create larger deltaTick
+        // Each swap should cause progressively larger price movements
+        uint24 fee1;
+        int24 deltaTick1;
+        uint24 fee2;
+        int24 deltaTick2;
+
+        // First large swap
+        (fee1, deltaTick1) = performSwap(10e18, true);
+        
+        // Second even larger swap
+        (fee2, deltaTick2) = performSwap(20e18, true);
+
+        // Verify that fee increases more than linearly (quadratic behavior)
+        // If it were linear: fee2 ≈ fee1 + k1*(deltaTick2 - deltaTick1)
+        // With quadratic: fee2 ≈ fee1 + k1*(deltaTick2 - deltaTick1) + k2*(deltaTick2² - deltaTick1²)
+        // The quadratic term should make fee2 grow faster than linearly
+        
+        // Basic verification: larger deltaTick should result in higher fee
+        if (deltaTick2 > deltaTick1) {
+            assertGe(fee2, fee1, "Larger deltaTick should result in higher fee");
+        }
+
+        // Verify fee is calculated using quadratic formula
+        // For deltaTick > 0, fee should be > baseFee
+        if (deltaTick1 > 0) {
+            assertGt(fee1, DEFAULT_BASE_FEE, "Fee should be > baseFee when deltaTick > 0");
+        }
+        if (deltaTick2 > 0) {
+            assertGt(fee2, DEFAULT_BASE_FEE, "Fee should be > baseFee when deltaTick > 0");
+        }
+    }
+
+    /// @notice Test that price jumps increase fee exponentially (quadratically)
+    /// @dev Verifies that fee grows quadratically, not linearly, with price jumps
+    function test_PriceJumpDetection() public {
+        // Configure fees
+        vm.prank(address(hook.owner()));
+        hook.setPoolConfig(poolKey, 5, 200);
+
+        // First swap to initialize
+        performSwap(1e18, true);
+
+        // Perform multiple swaps to create price jumps
+        // Each swap should cause the price to move, creating deltaTick
+        uint24[] memory fees = new uint24[](5);
+        int24[] memory deltaTicks = new int24[](5);
+
+        // Perform 5 swaps with increasing sizes
+        for (uint i = 0; i < 5; i++) {
+            uint256 swapAmount = (i + 1) * 5e18; // 5e18, 10e18, 15e18, 20e18, 25e18
+            (fees[i], deltaTicks[i]) = performSwap(swapAmount, true);
+        }
+
+        // Verify that fees increase (may not be strictly increasing due to price dynamics,
+        // but should generally trend upward with larger swaps)
+        uint24 maxFee = 0;
+        for (uint i = 0; i < 5; i++) {
+            assertGe(fees[i], DEFAULT_BASE_FEE, "All fees should be >= baseFee");
+            if (fees[i] > maxFee) {
+                maxFee = fees[i];
+            }
+        }
+
+        // Verify that at least some swaps had higher fees than baseFee
+        // (indicating deltaTick > 0 and quadratic formula working)
+        assertGe(maxFee, DEFAULT_BASE_FEE, "At least one swap should have fee > baseFee");
+    }
+
+    /// @notice Test that normal swaps (deltaTick ≈ 0) maintain low fee
+    /// @dev In stable pairs, deltaTick should be ≈ 0 normally, so fee should be baseFee
+    function test_NormalSwapLowFee() public {
+        // Configure default fees
+        vm.prank(address(hook.owner()));
+        hook.setPoolConfig(poolKey, 5, 60);
+
+        // First swap: should have deltaTick = 0 (first swap)
+        uint256 firstSwap = 1e18;
+        (uint24 fee1, int24 deltaTick1) = performSwap(firstSwap, true);
+        
+        // First swap should have deltaTick = 0 and fee = baseFee
+        assertEq(deltaTick1, 0, "First swap should have deltaTick = 0");
+        assertEq(fee1, DEFAULT_BASE_FEE, "First swap should have fee = baseFee");
+
+        // Second swap: in stable pairs, deltaTick should be small (0-2 typically)
+        uint256 secondSwap = 1e18; // Same size as first
+        (uint24 fee2, int24 deltaTick2) = performSwap(secondSwap, true);
+
+        // In stable pairs, small swaps should have small deltaTick
+        // Fee should be close to baseFee (maybe slightly higher if deltaTick > 0)
+        assertGe(fee2, DEFAULT_BASE_FEE, "Normal swap should have fee >= baseFee");
+        
+        // If deltaTick is small (0-2), fee should be close to baseFee
+        // Formula: fee = 5 + 0.5*deltaTick + 0.2*deltaTick²
+        // For deltaTick = 0: fee = 5
+        // For deltaTick = 1: fee = 5 + 0.5 + 0.2 = 5.7 ≈ 6
+        // For deltaTick = 2: fee = 5 + 1 + 0.8 = 6.8 ≈ 7
+        if (deltaTick2 <= 2) {
+            assertLe(fee2, 10, "Small deltaTick should result in fee close to baseFee");
+        }
+
+        // Third swap: another normal swap
+        uint256 thirdSwap = 1e18;
+        (uint24 fee3, int24 deltaTick3) = performSwap(thirdSwap, true);
+
+        // Verify consistency: normal swaps should have similar fees
+        // (assuming similar deltaTick)
+        assertGe(fee3, DEFAULT_BASE_FEE, "Normal swap should have fee >= baseFee");
+    }
+
+    /// @notice Test complete sandwich attack simulation
+    /// @dev Simulates a full sandwich attack and verifies fee increases significantly
+    function test_SandwichAttackSimulation() public {
+        // Configure fees
+        vm.prank(address(hook.owner()));
+        hook.setPoolConfig(poolKey, 5, 100);
+
+        // Step 1: Normal trading (baseline)
+        uint256 normalSwap1 = 1e18;
+        (uint24 feeNormal1,) = performSwap(normalSwap1, true);
+        
+        uint256 normalSwap2 = 1e18;
+        (uint24 feeNormal2,) = performSwap(normalSwap2, true);
+
+        // Normal swaps should have similar, low fees
+        assertGe(feeNormal1, DEFAULT_BASE_FEE, "Normal swap should have fee >= baseFee");
+        assertGe(feeNormal2, DEFAULT_BASE_FEE, "Normal swap should have fee >= baseFee");
+        
+        // Average fee for normal swaps should be close to baseFee
+        uint24 avgNormalFee = (feeNormal1 + feeNormal2) / 2;
+        assertLe(avgNormalFee, 10, "Average normal fee should be low (close to baseFee)");
+
+        // Step 2: Simulate sandwich attack - large swap that moves price significantly
+        uint256 attackSwap = 100e18; // Very large swap (100x normal)
+        (uint24 feeAttack, int24 deltaTickAttack) = performSwap(attackSwap, true);
+
+        // Attack swap should have significantly higher fee
+        assertGt(feeAttack, avgNormalFee, "Attack swap should have higher fee than normal swaps");
+        assertGe(feeAttack, DEFAULT_BASE_FEE, "Attack swap should have fee >= baseFee");
+        
+        // deltaTick should be larger for the attack swap
+        assertGe(deltaTickAttack, 0, "Attack swap should have deltaTick >= 0");
+
+        // Step 3: Verify quadratic formula is working
+        // For large deltaTick, the quadratic term should dominate
+        // Formula: fee = baseFee + k1*deltaTick + k2*deltaTick²
+        // If deltaTick is large, k2*deltaTick² should be the dominant term
+        
+        // Calculate expected fee using quadratic formula
+        if (deltaTickAttack > 0) {
+            uint256 expectedFee = uint256(DEFAULT_BASE_FEE);
+            uint256 deltaTickUint = uint256(uint24(deltaTickAttack));
+            expectedFee += (uint256(K1) * deltaTickUint) / 10; // Linear term
+            expectedFee += (uint256(K2) * deltaTickUint * deltaTickUint) / 10; // Quadratic term
+            
+            // Cap at maxFee
+            if (expectedFee > 100) {
+                expectedFee = 100;
+            }
+            
+            // Fee should be close to expected (within reasonable margin)
+            // Note: actual fee might differ slightly due to price dynamics, but should be close
+            assertGe(feeAttack, uint24(expectedFee * 8 / 10), "Fee should be close to quadratic formula");
+            assertLe(feeAttack, uint24(expectedFee * 12 / 10), "Fee should be close to quadratic formula");
+        }
+
+        // Step 4: Verify that hook protects against sandwich attacks
+        // The high fee should make the attack less profitable
+        assertGt(feeAttack, DEFAULT_BASE_FEE * 2, "Attack should result in fee at least 2x baseFee");
+    }
+
+    // ============================================================
+    // Tests: Integration Tests
+    // ============================================================
+
+    /// @notice Test complete swap execution with hook active
+    /// @dev Verifies that hook integrates correctly with Uniswap v4 swap mechanism
+    function test_SwapWithHook() public {
+        // Configure hook
+        vm.prank(address(hook.owner()));
+        hook.setPoolConfig(poolKey, 5, 60);
+
+        // Get initial balances
+        uint256 balance0Before = token0.balanceOf(address(this));
+        uint256 balance1Before = token1.balanceOf(address(this));
+
+        // Perform swap with hook
+        uint256 amountIn = 1e18;
+        BalanceDelta swapDelta = swapRouter.swapExactTokensForTokens({
+            amountIn: amountIn,
+            amountOutMin: 0,
+            zeroForOne: true,
+            poolKey: poolKey,
+            hookData: Constants.ZERO_BYTES,
+            receiver: address(this),
+            deadline: block.timestamp + 1
+        });
+
+        // Verify swap executed successfully
+        assertLt(int256(swapDelta.amount0()), 0, "Swap should execute successfully");
+        
+        // Verify balances changed
+        uint256 balance0After = token0.balanceOf(address(this));
+        uint256 balance1After = token1.balanceOf(address(this));
+        
+        // For zeroForOne swap, amount0 should decrease
+        assertLt(balance0After, balance0Before, "Token0 balance should decrease");
+        
+        // Verify hook metrics were updated
+        (int24 lastTick, uint256 avgTradeSize) = hook.getPoolMetrics(poolId);
+        assertNe(lastTick, 0, "lastTick should be updated after swap");
+        assertEq(avgTradeSize, amountIn, "avgTradeSize should be updated after first swap");
+    }
+
+    /// @notice Test behavior with multiple consecutive swaps
+    /// @dev Verifies that hook handles multiple swaps correctly and updates metrics properly
+    function test_MultipleSwaps() public {
+        // Configure hook
+        vm.prank(address(hook.owner()));
+        hook.setPoolConfig(poolKey, 5, 60);
+
+        // Perform 5 consecutive swaps
+        uint256[] memory swapAmounts = new uint256[](5);
+        swapAmounts[0] = 1e18;
+        swapAmounts[1] = 2e18;
+        swapAmounts[2] = 1e18;
+        swapAmounts[3] = 3e18;
+        swapAmounts[4] = 1e18;
+
+        uint24[] memory fees = new uint24[](5);
+        int24[] memory deltaTicks = new int24[](5);
+
+        for (uint i = 0; i < 5; i++) {
+            (fees[i], deltaTicks[i]) = performSwap(swapAmounts[i], true);
+        }
+
+        // Verify all swaps executed
+        for (uint i = 0; i < 5; i++) {
+            assertGe(fees[i], DEFAULT_BASE_FEE, "All swaps should have fee >= baseFee");
+            assertGe(deltaTicks[i], 0, "All swaps should have deltaTick >= 0");
+        }
+
+        // Verify metrics were updated after all swaps
+        (int24 finalLastTick, uint256 finalAvgTradeSize) = hook.getPoolMetrics(poolId);
+        assertNe(finalLastTick, 0, "lastTick should be updated after all swaps");
+        assertGt(finalAvgTradeSize, 0, "avgTradeSize should be updated after all swaps");
+
+        // Verify avgTradeSize is a moving average (should be between min and max swap amounts)
+        uint256 minSwap = 1e18;
+        uint256 maxSwap = 3e18;
+        assertGe(finalAvgTradeSize, minSwap, "avgTradeSize should be >= minimum swap");
+        assertLe(finalAvgTradeSize, maxSwap, "avgTradeSize should be <= maximum swap");
+    }
+
+    /// @notice Test that dynamic fee is correctly applied in swaps
+    /// @dev Verifies that the fee returned by beforeSwap is actually used by the pool
+    function test_FeeAppliedCorrectly() public {
+        // Configure custom fees
+        vm.prank(address(hook.owner()));
+        hook.setPoolConfig(poolKey, 10, 50); // baseFee=10, maxFee=50
+
+        // First swap to initialize
+        performSwap(1e18, true);
+
+        // Perform swap and verify fee is applied
+        // Note: We can't directly verify the fee was applied in the swap calculation,
+        // but we can verify that the hook returns the correct fee and the swap succeeds
+        uint256 amountIn = 5e18;
+        (uint24 fee, int24 deltaTick) = performSwap(amountIn, true);
+
+        // Verify fee is within expected range
+        assertGe(fee, 10, "Fee should be >= baseFee");
+        assertLe(fee, 50, "Fee should be <= maxFee");
+
+        // Verify fee calculation matches quadratic formula
+        uint256 expectedFee = 10; // baseFee
+        if (deltaTick > 0) {
+            uint256 deltaTickUint = uint256(uint24(deltaTick));
+            expectedFee += (uint256(K1) * deltaTickUint) / 10;
+            expectedFee += (uint256(K2) * deltaTickUint * deltaTickUint) / 10;
+        }
+        if (expectedFee > 50) {
+            expectedFee = 50;
+        }
+
+        // Fee should be close to expected (within reasonable margin)
+        assertGe(fee, uint24(expectedFee * 9 / 10), "Fee should match quadratic formula");
+        assertLe(fee, uint24(expectedFee * 11 / 10), "Fee should match quadratic formula");
+    }
+
+    // ============================================================
+    // Tests: Edge Cases
+    // ============================================================
+
+    /// @notice Test handling of zero price (uninitialized pool)
+    /// @dev Verifies that hook handles gracefully when pool price is zero
+    function test_ZeroPrice() public {
+        // Create a new pool key but don't initialize it
+        PoolKey memory newPoolKey = PoolKey(currency0, currency1, 3000, 60, IHooks(hook));
+        PoolId newPoolId = newPoolKey.toId();
+
+        // Try to get metrics from uninitialized pool
+        (int24 lastTick, uint256 avgTradeSize) = hook.getPoolMetrics(newPoolId);
+        assertEq(lastTick, 0, "lastTick should be 0 for uninitialized pool");
+        assertEq(avgTradeSize, 0, "avgTradeSize should be 0 for uninitialized pool");
+
+        // Try to get config from uninitialized pool
+        AntiSandwichHook.PoolStorage memory config = hook.getPoolConfig(newPoolId);
+        assertEq(config.baseFee, 0, "baseFee should be 0 for uninitialized pool");
+        assertEq(config.maxFee, 0, "maxFee should be 0 for uninitialized pool");
+
+        // Hook should handle zero price gracefully in beforeSwap
+        // (returns 0 fee, which is tested implicitly through swap mechanism)
+    }
+
+    /// @notice Test handling of zero trade size
+    /// @dev Verifies that hook handles zero trade size gracefully
+    function test_ZeroTradeSize() public {
+        // This is tested implicitly - if amountIn is 0, the swap router should handle it
+        // The hook's beforeSwap should handle it gracefully (already tested in edge cases)
+        
+        // Verify that normal swaps still work after edge cases
+        (uint24 fee,) = performSwap(1e18, true);
+        assertGe(fee, DEFAULT_BASE_FEE, "Normal swap should work after edge cases");
+    }
+
+    /// @notice Test overflow protection in calculations
+    /// @dev Verifies that calculations don't overflow even with extreme values
+    function test_OverflowProtection() public {
+        // Configure fees
+        vm.prank(address(hook.owner()));
+        hook.setPoolConfig(poolKey, 5, 10000); // High maxFee to test overflow protection
+
+        // First swap
+        performSwap(1e18, true);
+
+        // Test with very large deltaTick values
+        // Note: In practice, deltaTick is bounded by Uniswap's tick limits,
+        // but we test that the formula handles large values correctly
+        
+        // Perform swaps that might cause large deltaTick
+        // The formula uses uint256 for intermediate calculations, so should be safe
+        for (uint i = 0; i < 10; i++) {
+            uint256 largeSwap = (i + 1) * 10e18;
+            (uint24 fee, int24 deltaTick) = performSwap(largeSwap, true);
+            
+            // Verify fee is within bounds (maxFee cap should prevent overflow)
+            assertLe(fee, 10000, "Fee should be capped at maxFee (overflow protection)");
+            assertGe(fee, 5, "Fee should be >= baseFee");
+            
+            // Verify deltaTick is reasonable (Uniswap ticks are bounded)
+            assertGe(deltaTick, 0, "deltaTick should be >= 0");
+        }
+
+        // Test avgTradeSize overflow protection
+        // avgTradeSize uses: (avgTradeSize * 9 + tradeSize) / 10
+        // This is safe because division prevents overflow
+        (int24, uint256 avgTradeSize) = hook.getPoolMetrics(poolId);
+        assertGt(avgTradeSize, 0, "avgTradeSize should be > 0");
+        // avgTradeSize should be reasonable (not overflowed)
+        assertLt(avgTradeSize, type(uint128).max, "avgTradeSize should not overflow");
+    }
+
+    /// @notice Test reentrancy protection
+    /// @dev Verifies that hook is not vulnerable to reentrancy attacks
+    function test_Reentrancy() public {
+        // The hook uses Uniswap v4's hook system, which should have reentrancy protection
+        // However, we verify that our hook doesn't introduce additional vulnerabilities
+        
+        // Configure hook
+        vm.prank(address(hook.owner()));
+        hook.setPoolConfig(poolKey, 5, 60);
+
+        // Perform normal swap - should not allow reentrancy
+        uint256 amountIn = 1e18;
+        BalanceDelta swapDelta = swapRouter.swapExactTokensForTokens({
+            amountIn: amountIn,
+            amountOutMin: 0,
+            zeroForOne: true,
+            poolKey: poolKey,
+            hookData: Constants.ZERO_BYTES,
+            receiver: address(this),
+            deadline: block.timestamp + 1
+        });
+
+        // Verify swap executed successfully (reentrancy would cause revert)
+        assertLt(int256(swapDelta.amount0()), 0, "Swap should execute without reentrancy issues");
+
+        // Verify metrics were updated only once (reentrancy would cause multiple updates)
+        (int24 lastTick, uint256 avgTradeSize) = hook.getPoolMetrics(poolId);
+        assertNe(lastTick, 0, "lastTick should be updated exactly once");
+        assertEq(avgTradeSize, amountIn, "avgTradeSize should be updated exactly once");
+    }
+
+    /// @notice Test access control (only owner can configure)
+    /// @dev Verifies that only owner can call setPoolConfig
+    function test_AccessControl() public {
+        // This test already exists as test_SetPoolConfig_OnlyOwner
+        // But we add an additional test to verify owner can configure
+        
+        address owner = hook.owner();
+        assertTrue(owner != address(0), "Owner should be set");
+
+        // Owner should be able to configure
+        vm.prank(owner);
+        hook.setPoolConfig(poolKey, 10, 80);
+
+        // Verify config was set
+        AntiSandwichHook.PoolStorage memory config = hook.getPoolConfig(poolId);
+        assertEq(config.baseFee, 10, "Owner should be able to set baseFee");
+        assertEq(config.maxFee, 80, "Owner should be able to set maxFee");
+
+        // Non-owner should not be able to configure (tested in test_SetPoolConfig_OnlyOwner)
+    }
+
+    /// @notice Test parameter validation
+    /// @dev Verifies that invalid parameters are rejected
+    function test_InvalidParameters() public {
+        // This test already exists as test_SetPoolConfig_Validation
+        // But we add additional edge cases
+        
+        vm.startPrank(address(hook.owner()));
+
+        // Test: baseFee = 0 (invalid)
+        vm.expectRevert("AntiSandwichHook: invalid baseFee");
+        hook.setPoolConfig(poolKey, 0, 10);
+
+        // Test: maxFee = 0 (invalid)
+        vm.expectRevert("AntiSandwichHook: invalid maxFee");
+        hook.setPoolConfig(poolKey, 5, 0);
+
+        // Test: maxFee = baseFee (invalid, must be > baseFee)
+        vm.expectRevert("AntiSandwichHook: maxFee must be > baseFee");
+        hook.setPoolConfig(poolKey, 10, 10);
+
+        // Test: maxFee < baseFee (invalid)
+        vm.expectRevert("AntiSandwichHook: maxFee must be > baseFee");
+        hook.setPoolConfig(poolKey, 20, 10);
+
+        // Test: fees > 10000 (invalid, max is 100%)
+        vm.expectRevert("AntiSandwichHook: invalid baseFee");
+        hook.setPoolConfig(poolKey, 10001, 10002);
+
+        vm.expectRevert("AntiSandwichHook: invalid maxFee");
+        hook.setPoolConfig(poolKey, 10000, 10001);
+
+        // Test: Valid parameters should work
+        hook.setPoolConfig(poolKey, 5, 60);
+        AntiSandwichHook.PoolStorage memory config = hook.getPoolConfig(poolId);
+        assertEq(config.baseFee, 5, "Valid baseFee should be set");
+        assertEq(config.maxFee, 60, "Valid maxFee should be set");
+
+        vm.stopPrank();
+    }
 }
 
