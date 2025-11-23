@@ -54,6 +54,19 @@ contract AntiSandwichHook is BaseHook {
     mapping(PoolId => PoolStorage) public poolStorage;
 
     // ============================================================
+    // Access Control
+    // ============================================================
+
+    /// @notice Owner address with permission to configure pools
+    address public owner;
+
+    /// @notice Modifier to restrict function access to owner only
+    modifier onlyOwner() {
+        require(msg.sender == owner, "AntiSandwichHook: caller is not the owner");
+        _;
+    }
+
+    // ============================================================
     // Events
     // ============================================================
 
@@ -89,7 +102,11 @@ contract AntiSandwichHook is BaseHook {
     // Constructor
     // ============================================================
 
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
+    /// @notice Constructor sets the pool manager and initializes owner
+    /// @param _poolManager The Uniswap v4 PoolManager contract address
+    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {
+        owner = msg.sender;
+    }
 
     // ============================================================
     // Hook Permissions
@@ -523,13 +540,13 @@ contract AntiSandwichHook is BaseHook {
     // ============================================================
 
     /// @notice Sets the configuration for a pool
-    /// @dev Only owner can call (to be implemented with access control in Paso 1.6)
+    /// @dev Only owner can call. Validates all parameters before updating.
     /// @param key The pool key
-    /// @param _lowRiskFee Fee for low risk swaps (in basis points)
-    /// @param _mediumRiskFee Fee for medium risk swaps (in basis points)
-    /// @param _highRiskFee Fee for high risk swaps (in basis points)
-    /// @param _riskThresholdLow Low risk threshold
-    /// @param _riskThresholdHigh High risk threshold
+    /// @param _lowRiskFee Fee for low risk swaps (in basis points, must be > 0 and <= 10000)
+    /// @param _mediumRiskFee Fee for medium risk swaps (in basis points, must be > 0 and <= 10000)
+    /// @param _highRiskFee Fee for high risk swaps (in basis points, must be > 0 and <= 10000)
+    /// @param _riskThresholdLow Low risk threshold (must be < riskThresholdHigh)
+    /// @param _riskThresholdHigh High risk threshold (must be > riskThresholdLow)
     function setPoolConfig(
         PoolKey calldata key,
         uint24 _lowRiskFee,
@@ -537,15 +554,48 @@ contract AntiSandwichHook is BaseHook {
         uint24 _highRiskFee,
         uint8 _riskThresholdLow,
         uint8 _riskThresholdHigh
-    ) external {
-        // TODO: Implement in Paso 1.6
-        // 1. Add onlyOwner modifier
-        // 2. Validate parameters:
-        //    - Fees > 0 and <= 10000 (100%)
-        //    - lowRiskFee < mediumRiskFee < highRiskFee
-        //    - riskThresholdLow < riskThresholdHigh
-        // 3. Update poolStorage[key.toId()]
-        // 4. Emit PoolConfigUpdated event
+    ) external onlyOwner {
+        // ============================================================
+        // 1. Validate fee parameters
+        // ============================================================
+        // Fees must be > 0 and <= 10000 (100%)
+        require(_lowRiskFee > 0 && _lowRiskFee <= 10000, "AntiSandwichHook: invalid lowRiskFee");
+        require(_mediumRiskFee > 0 && _mediumRiskFee <= 10000, "AntiSandwichHook: invalid mediumRiskFee");
+        require(_highRiskFee > 0 && _highRiskFee <= 10000, "AntiSandwichHook: invalid highRiskFee");
+        
+        // Fees must be in ascending order: lowRiskFee < mediumRiskFee < highRiskFee
+        require(_lowRiskFee < _mediumRiskFee, "AntiSandwichHook: lowRiskFee must be < mediumRiskFee");
+        require(_mediumRiskFee < _highRiskFee, "AntiSandwichHook: mediumRiskFee must be < highRiskFee");
+        
+        // ============================================================
+        // 2. Validate threshold parameters
+        // ============================================================
+        // Thresholds must be in ascending order: riskThresholdLow < riskThresholdHigh
+        require(_riskThresholdLow < _riskThresholdHigh, "AntiSandwichHook: riskThresholdLow must be < riskThresholdHigh");
+        
+        // ============================================================
+        // 3. Update pool storage
+        // ============================================================
+        PoolId poolId = key.toId();
+        PoolStorage storage storage_ = poolStorage[poolId];
+        
+        storage_.lowRiskFee = _lowRiskFee;
+        storage_.mediumRiskFee = _mediumRiskFee;
+        storage_.highRiskFee = _highRiskFee;
+        storage_.riskThresholdLow = _riskThresholdLow;
+        storage_.riskThresholdHigh = _riskThresholdHigh;
+        
+        // ============================================================
+        // 4. Emit event for logging and monitoring
+        // ============================================================
+        emit PoolConfigUpdated(
+            poolId,
+            _lowRiskFee,
+            _mediumRiskFee,
+            _highRiskFee,
+            _riskThresholdLow,
+            _riskThresholdHigh
+        );
     }
 
     /// @notice Gets the current configuration for a pool

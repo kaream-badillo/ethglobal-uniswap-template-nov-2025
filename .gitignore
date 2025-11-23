@@ -11,12 +11,38 @@ out/
 # Docs
 docs/
 
+# Internal documentation (should not be in public repo)
+docs-internos/
+/docs-internos/
+
+# Cursor AI configuration (should not be in public repo)
+.cursor/
+.cursor
+
 # Dotenv file
 .env
+.env.local
+.env.*.local
 
 # Node modules
 node_modules/
 
-/docs-internos/
-.cursor
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+tmp/
 
