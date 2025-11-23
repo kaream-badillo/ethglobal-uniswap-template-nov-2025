@@ -1,8 +1,13 @@
-# 🪝 Anti-Sandwich Hook for Uniswap v4 (Stable Assets)
+# 🪝 Tick Impact Predictor Hook - Quadratic Fee Adjustment Based on Pre-Swap deltaTick Prediction
 
 > **This hook NEVER blocks swaps — it only adjusts fees.**
 
-A Uniswap v4 Hook that detects sandwich attack patterns in stable asset markets and dynamically adjusts fees based on risk score, protecting LPs and users without blocking swaps.
+A Uniswap v4 Hook that predicts price impact using `deltaTick` before swap execution and dynamically adjusts fees using a continuous quadratic formula, protecting LPs and users from sandwich attacks without blocking swaps.
+
+**Built for ETHGlobal Buenos Aires 2025 - Track 1: Stable-Asset Hooks**
+
+> 💡 **MVP Name:** Tick Impact Predictor Hook  
+> **Technical Implementation:** AntiSandwichHook (contract name)
 
 > 📖 **For detailed technical documentation, see [Technical Architecture](docs/TECHNICAL-ARCHITECTURE.md)** - Complete technical documentation explaining the mathematics, design decisions, and implementation details.
 
@@ -23,12 +28,13 @@ Users and Liquidity Providers (LPs) in stable asset markets suffer from **Sandwi
 
 ## 💡 Solution
 
-This Uniswap v4 Hook:
-1. **Detects risk patterns** typical of sandwich attacks
-2. **Calculates a riskScore** based on trade size, price volatility, and consecutive patterns
-3. **Dynamically adjusts fees** according to detected risk
-4. **Never blocks swaps** - maintains UX and composability
-5. **Protects LPs and users** without external oracles
+**Tick Impact Predictor Hook** predicts price impact before swap execution and adjusts fees dynamically:
+
+1. **Predicts price impact** using `deltaTick` - the difference between current and last tick (pre-swap prediction)
+2. **Applies dynamic fees** using a continuous quadratic formula: `fee = baseFee + k1*deltaTick + k2*deltaTick²`
+3. **Never blocks swaps** - maintains UX and composability
+4. **Protects LPs and users** without external oracles
+5. **Gas efficient** - only ~900 gas per swap (3x better than previous approaches)
 
 ---
 
@@ -37,9 +43,9 @@ This Uniswap v4 Hook:
 ### Algorithm Overview (4 Steps)
 
 1. **Detect** → Hook intercepts swap before execution
-2. **Calculate** → Compute risk score from trade size, price delta, and spike patterns
-3. **Adjust** → Apply dynamic fee based on risk (5 bps → 60 bps)
-4. **Update** → Record metrics after swap for future detection
+2. **Calculate** → Compute `deltaTick` (price impact) and apply quadratic fee formula
+3. **Adjust** → Apply dynamic fee based on `deltaTick` (5 bps → 60 bps)
+4. **Update** → Record `lastTick` and `avgTradeSize` after swap for future detection
 
 ### Dynamic Fee Calculation
 
@@ -203,10 +209,10 @@ The hook can be configured with the following parameters:
 
 - **`baseFee`**: Base fee (default: 5 bps = 0.05%)
 - **`maxFee`**: Maximum fee (default: 60 bps = 0.60%)
-- **`k1`**: Linear coefficient for deltaTick (default: 0.5, can be constant)
-- **`k2`**: Quadratic coefficient for deltaTick (default: 0.2, can be constant)
+- **`k1`**: Linear coefficient for deltaTick (constant: 5 = 0.5 scaled x10)
+- **`k2`**: Quadratic coefficient for deltaTick (constant: 2 = 0.2 scaled x10)
 
-**Note:** This version uses a continuous formula instead of discrete thresholds, making it more elegant and efficient.
+**Note:** This version uses a continuous quadratic formula instead of discrete thresholds, making it more elegant and efficient. The formula is: `fee = baseFee + k1*deltaTick + k2*deltaTick²`
 
 ### Setting Parameters
 
@@ -223,13 +229,13 @@ hook.setPoolConfig(
 
 ## 🧪 Testing
 
-The project includes comprehensive tests:
+The project includes comprehensive tests (26 total):
 
-- **Unit tests**: Core logic (riskScore calculation, fee adjustment)
-- **Integration tests**: Full swap flow with Uniswap v4
-- **Sandwich detection tests**: Pattern detection and fee adjustment
-- **Edge cases**: Zero price, extreme volatility, reentrancy
-- **Security tests**: Access control, parameter validation
+- **Unit tests**: Core logic (deltaTick calculation, quadratic fee formula)
+- **Integration tests**: Full swap flow with Uniswap v4 PoolManager
+- **Sandwich detection tests**: Pattern detection and dynamic fee adjustment
+- **Edge cases**: First swap, zero price, extreme volatility, overflow protection
+- **Security tests**: Access control, parameter validation, reentrancy protection
 
 ### Running Tests
 
@@ -237,11 +243,15 @@ The project includes comprehensive tests:
 # All tests
 forge test
 
-# Specific test
-forge test --match-test test_CalculateRiskScore
+# Specific test categories
+forge test --match-test test_DeltaTickCalculation
+forge test --match-test test_DynamicFeeCalculation
 forge test --match-test test_SandwichPatternDetection
 
-# Fork tests
+# With gas report
+forge test --gas-report
+
+# Fork tests (requires RPC_URL)
 forge test --fork-url $RPC_URL
 ```
 
@@ -252,25 +262,31 @@ forge test --fork-url $RPC_URL
 ### Metrics
 
 - **MEV Reduction**: 30-50% in stable pairs (estimated)
-- **Dynamic Fee**: 5 bps (normal, deltaTick=0) → 60 bps (high risk, deltaTick≥4)
-- **Gas Cost**: ~900-1000 gas per swap (3x more efficient than riskScore version)
+- **Dynamic Fee**: 5 bps (normal, deltaTick=0) → 60 bps (high risk, deltaTick≥15)
+- **Gas Cost**: ~900 gas per swap (3x more efficient than previous version)
 - **Detection**: Based on `deltaTick` - more precise for stables than price delta
+- **Test Coverage**: 26 comprehensive tests (unit, integration, edge cases)
 
 ### Use Cases
 
 1. **Normal Swap (USDC/USDT)**
    - Stable price, `deltaTick ≈ 0`
-   - `deltaTick = 0` → fee = 5 bps
-   - Normal behavior, no penalty
+   - `deltaTick = 0` → fee = 5 bps (baseFee)
+   - Normal behavior, minimal fee
 
 2. **Price Jump (Possible Sandwich)**
    - Price jumps, `deltaTick = 3`
-   - `deltaTick = 3` → fee ≈ 35-50 bps
+   - `deltaTick = 3` → fee = 8.3 bps (quadratic formula)
    - Discourages sandwich, protects LPs
 
 3. **Large Price Jump (High Risk)**
-   - Large price movement, `deltaTick ≥ 4`
-   - `deltaTick ≥ 4` → fee = 60 bps (maxFee)
+   - Large price movement, `deltaTick = 10`
+   - `deltaTick = 10` → fee = 30 bps (quadratic term dominates)
+   - Strong disincentive for sandwich attacks
+
+4. **Extreme Price Jump (Maximum Protection)**
+   - Very large price movement, `deltaTick ≥ 15`
+   - `deltaTick ≥ 15` → fee = 60 bps (maxFee cap)
    - Maximum protection against sandwich attacks
 
 ---
@@ -286,10 +302,10 @@ forge test --fork-url $RPC_URL
 
 ---
 
-## 📚 Documentation
+## 📚 Additional Documentation
 
-- **Internal Docs**: See `docs-internos/` for detailed architecture and roadmap
-- **Project Context**: See `.cursor/project-context.md` for technical details
+- **Technical Architecture**: [docs/TECHNICAL-ARCHITECTURE.md](docs/TECHNICAL-ARCHITECTURE.md) - Complete technical documentation
+- **Demo Setup**: [docs/DEMO_SETUP.md](docs/DEMO_SETUP.md) - Step-by-step demo instructions
 - **Uniswap v4 Docs**: [docs.uniswap.org](https://docs.uniswap.org/contracts/v4/overview)
 
 ---
@@ -308,15 +324,19 @@ forge test --fork-url $RPC_URL
 ```
 .
 ├── src/
-│   └── AntiSandwichHook.sol      # Main hook contract
+│   └── AntiSandwichHook.sol           # Main hook contract
 ├── test/
-│   ├── AntiSandwichHook.t.sol   # Unit tests
-│   └── integration/             # Integration tests
+│   ├── AntiSandwichHook.t.sol        # Comprehensive tests (26 tests)
+│   └── utils/                        # Test utilities
 ├── script/
-│   └── deploy/
-│       └── DeployAntiSandwichHook.s.sol
-├── docs-internos/               # Internal documentation
-└── README.md                    # This file
+│   ├── deploy/
+│   │   └── DeployAntiSandwichHook.s.sol  # Deployment script
+│   └── demo/
+│       └── DemoAntiSandwichHook.s.sol    # Demo script
+├── docs/
+│   ├── TECHNICAL-ARCHITECTURE.md     # Complete technical documentation
+│   └── DEMO_SETUP.md                 # Demo setup instructions
+└── README.md                         # This file
 ```
 
 ---
@@ -334,7 +354,7 @@ forge test --fork-url $RPC_URL
 
 | Contract | Address | Explorer | Status |
 |----------|---------|----------|--------|
-| **AntiSandwichHook** | `0x5AebB929DA77cCDFE141CeB2Af210FaA3905c0c0` | [View on Etherscan](https://sepolia.etherscan.io/address/0x5AebB929DA77cCDFE141CeB2Af210FaA3905c0c0) | ✅ Verified |
+| **Tick Impact Predictor Hook**<br/>(AntiSandwichHook) | `0x5AebB929DA77cCDFE141CeB2Af210FaA3905c0c0` | [View on Etherscan](https://sepolia.etherscan.io/address/0x5AebB929DA77cCDFE141CeB2Af210FaA3905c0c0) | ✅ Verified |
 | **PoolManager** | `0xE03A1074c86CFeDd5C142C4F04F1a1536e203543` | [View on Etherscan](https://sepolia.etherscan.io/address/0xE03A1074c86CFeDd5C142C4F04F1a1536e203543) | - |
 
 **Deployment Transaction:**
@@ -351,12 +371,12 @@ forge test --fork-url $RPC_URL
 
 ### Deliverables
 
-- ✅ TxIDs of transactions (testnet/mainnet)
+- ✅ TxIDs of transactions (testnet/mainnet) - Saved in deployment info
 - ✅ Contract verified on Etherscan (source code publicly visible)
 - ✅ Public GitHub repository
-- ✅ Complete README.md
-- ⚪ Functional demo or installation instructions
-- ⚪ Demo video (max 3 minutes, English with subtitles)
+- ✅ Complete README.md with setup instructions
+- ✅ Functional demo with setup instructions ([docs/DEMO_SETUP.md](docs/DEMO_SETUP.md))
+- ⚪ Demo video (max 3 minutes, English with subtitles) - Script ready in `docs-internos/VIDEO-PITCH-SCRIPT.md`
 
 ### Track Alignment
 
@@ -389,7 +409,29 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 📞 Contact
 
-For questions or feedback, please open an issue in the repository.
+**Author:** Kaream Badillo  
+**Email:** kaream.badillo@usach.cl  
+**Twitter/X:** [@kaream_badillo](https://twitter.com/kaream_badillo)
+
+For questions or feedback, please open an issue in the repository or contact via email.
+
+---
+
+## 🏆 Hackathon Information
+
+**Event:** ETHGlobal Buenos Aires (November 2025)  
+**Track:** Track 1 - Stable-Asset Hooks ($10,000 prize pool)  
+**Organizer:** Uniswap Foundation  
+**Prize Structure:**
+- 🥇 1st place: $4,000
+- 🥈 2nd place: $2,000 × 2
+- 🥉 3rd place: $1,000 × 2
+
+**Project Alignment:**
+- ✅ Optimized stable AMM logic (dynamic fee anti-sandwich)
+- ✅ Designed specifically for stable asset pairs (USDC/USDT, DAI/USDC)
+- ✅ No external oracles required (fully on-chain)
+- ✅ Gas efficient for production use (~900 gas per swap)
 
 ---
 

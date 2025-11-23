@@ -1,8 +1,11 @@
-# 🏗️ Complete Technical Architecture - AntiSandwichHook
+# 🏗️ Complete Technical Architecture - Tick Impact Predictor Hook
 
-**Detailed technical document explaining the MVP, mathematics, architecture, and all technical details of the Anti-Sandwich Hook for Uniswap v4.**
+**Detailed technical document explaining the MVP, mathematics, architecture, and all technical details of the Tick Impact Predictor Hook for Uniswap v4.**
 
 > 📖 **Complete technical documentation** explaining the design decisions, mathematical foundations, and implementation details of the hook.
+
+**MVP Name:** Tick Impact Predictor Hook - Quadratic Fee Adjustment Based on Pre-Swap deltaTick Prediction  
+**Technical Implementation:** AntiSandwichHook (contract name)
 
 ---
 
@@ -27,7 +30,9 @@
 
 ### What is this MVP?
 
-**AntiSandwichHook** is a Uniswap v4 hook that detects sandwich attack patterns in stable asset pairs (such as USDC/USDT) and applies dynamic fees based on expected price impact.
+**Tick Impact Predictor Hook** is a Uniswap v4 hook that predicts price impact using `deltaTick` before swap execution and applies dynamic fees using a continuous quadratic formula. It detects sandwich attack patterns in stable asset pairs (such as USDC/USDT) and protects LPs and users by adjusting fees based on predicted price impact.
+
+**Technical Implementation:** The hook is implemented as `AntiSandwichHook` (contract name).
 
 ### Key Features
 
@@ -910,7 +915,7 @@ require(_maxFee > _baseFee, "AntiSandwichHook: maxFee must be > baseFee");
 
 ### Technical Summary
 
-**AntiSandwichHook** is a Uniswap v4 hook that:
+**Tick Impact Predictor Hook** (implemented as `AntiSandwichHook`) is a Uniswap v4 hook that:
 
 1. **Detects** sandwich attack patterns using `deltaTick`
 2. **Applies** dynamic fees using continuous quadratic formula

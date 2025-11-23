@@ -1,8 +1,11 @@
-# 🚀 Demo Setup Instructions - AntiSandwichHook
+# 🚀 Demo Setup Instructions - Tick Impact Predictor Hook
 
-**Step-by-step guide to run the functional demo of the Anti-Sandwich Hook**
+**Step-by-step guide to run the functional demo of the Tick Impact Predictor Hook**
 
-This demo shows how the hook detects sandwich attack patterns and applies dynamic fees based on `deltaTick`.
+This demo shows how the hook predicts price impact using `deltaTick` before swap execution and applies dynamic fees using a continuous quadratic formula.
+
+**MVP Name:** Tick Impact Predictor Hook - Quadratic Fee Adjustment Based on Pre-Swap deltaTick Prediction  
+**Technical Implementation:** AntiSandwichHook (contract name)
 
 ---
 
