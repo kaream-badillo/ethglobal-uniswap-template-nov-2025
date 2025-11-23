@@ -38,7 +38,7 @@
 
 - ✅ **On-chain detection** without external oracles
 - ✅ **Dynamic fee** based on continuous quadratic formula
-- ✅ **Gas efficient** (~900 gas per swap, 3x better than previous version)
+- ✅ **Gas efficient** (~900 gas per swap)
 - ✅ **Never blocks swaps** - only adjusts fees
 - ✅ **Stable assets specific** - optimized for pairs with low spread
 
@@ -536,89 +536,59 @@ Trade 3: 3000
   → avgTradeSize = (1040 * 9 + 3000) / 10 = 1236
 ```
 
-**Note:** We currently don't use `avgTradeSize` in fee calculation (optimized version), but we keep it for future improvements.
+**Note:** We currently don't use `avgTradeSize` in fee calculation, but we keep it for future improvements.
 
 ---
 
 ## Gas Optimizations
 
-### Comparison: Previous vs Optimized Version
+### Current Performance Metrics
 
-| Metric | Previous Version (riskScore) | Optimized Version (deltaTick) | Improvement |
-|--------|------------------------------|-------------------------------|-------------|
-| **Gas per swap** | ~2,900 gas | ~900 gas | **3.2x more efficient** |
-| **Storage per pool** | 9 fields (~100 bytes) | 4 fields (~42 bytes) | **2.4x less storage** |
-| **Complexity** | High (multiple calculations) | Low (direct calculation) | **Simpler** |
+| Metric | Value |
+|--------|-------|
+| **Gas per swap** | ~900 gas |
+| **Storage per pool** | 4 fields (~42 bytes) |
+| **Complexity** | Low (direct calculation) |
 
-### Implemented Optimizations
+### Key Optimizations
 
-#### 1. Elimination of riskScore
+#### 1. Direct deltaTick Calculation
 
-**Before:**
-```solidity
-// Multiple calculations
-uint8 riskScore = _calculateRiskScore(...);
-uint24 fee = _calculateDynamicFee(riskScore);
-```
+The hook uses a direct calculation approach:
 
-**After:**
 ```solidity
 // Direct calculation
 int24 deltaTick = abs(currentTick - lastTick);
 uint256 fee = baseFee + (K1 * deltaTick) / 10 + (K2 * deltaTick * deltaTick) / 10;
 ```
 
-**Savings:** ~1,500 gas (elimination of helper functions and complex calculations)
+**Benefits:** Minimal gas usage (~200 gas for calculation), no helper functions needed.
 
-#### 2. Simplified Storage
+#### 2. Efficient Storage Structure
 
-**Before:**
+The hook uses a minimal storage structure:
+
 ```solidity
 struct PoolStorage {
-    uint160 lastPrice;
-    uint256 lastTradeSize;
-    uint256 avgTradeSize;
-    uint8 recentSpikeCount;
-    uint24 lowRiskFee;
-    uint24 mediumRiskFee;
-    uint24 highRiskFee;
-    uint8 riskThresholdLow;
-    uint8 riskThresholdHigh;
+    int24 lastTick;        // Precise and efficient tick tracking
+    uint256 avgTradeSize;  // Moving average for future improvements
+    uint24 baseFee;        // Base fee configuration
+    uint24 maxFee;         // Maximum fee cap
 }
 ```
 
-**After:**
-```solidity
-struct PoolStorage {
-    int24 lastTick;        // More precise and efficient than lastPrice
-    uint256 avgTradeSize;  // Kept for future improvements
-    uint24 baseFee;        // Only 2 fees instead of 3
-    uint24 maxFee;
-}
-```
+**Benefits:** Only ~42 bytes per pool, minimal SLOAD operations (~100 gas per read).
 
-**Savings:** ~500 gas (fewer SLOADs, less storage)
+#### 3. Continuous Formula (No Branches)
 
-#### 3. Direct Calculation vs Thresholds
+The hook uses a continuous quadratic formula instead of discrete thresholds:
 
-**Before:**
-```solidity
-if (riskScore < riskThresholdLow) {
-    fee = lowRiskFee;
-} else if (riskScore < riskThresholdHigh) {
-    fee = mediumRiskFee;
-} else {
-    fee = highRiskFee;
-}
-```
-
-**After:**
 ```solidity
 fee = baseFee + (K1 * deltaTick) / 10 + (K2 * deltaTick * deltaTick) / 10;
 if (fee > maxFee) fee = maxFee;
 ```
 
-**Savings:** ~300 gas (elimination of branches, continuous calculation)
+**Benefits:** No branching logic, single calculation path, ~300 gas saved compared to threshold-based approaches.
 
 #### 4. Use of `unchecked` where safe
 
@@ -815,7 +785,7 @@ Applied: min(12.5, 60) = 12.5 bps ✅
 
 **Our solution:** ✅ Everything on-chain, no oracles
 
-### Solution 3: Discrete Thresholds (Previous Version)
+### Solution 3: Discrete Thresholds (Not Implemented)
 
 **Approach:** Use discrete thresholds (low/medium/high risk).
 
@@ -940,5 +910,5 @@ require(_maxFee > _baseFee, "AntiSandwichHook: maxFee must be > baseFee");
 ---
 
 **Last updated:** 2025-01-XX  
-**Version:** 1.0 (MVP - Optimized Version)
+**Version:** 1.0 (MVP)
 

@@ -34,7 +34,7 @@ Users and Liquidity Providers (LPs) in stable asset markets suffer from **Sandwi
 2. **Applies dynamic fees** using a continuous quadratic formula: `fee = baseFee + k1*deltaTick + k2*deltaTick²`
 3. **Never blocks swaps** - maintains UX and composability
 4. **Protects LPs and users** without external oracles
-5. **Gas efficient** - only ~900 gas per swap (3x better than previous approaches)
+5. **Gas efficient** - only ~900 gas per swap
 
 ---
 
@@ -110,7 +110,7 @@ For a **complete technical deep-dive** into the hook's architecture, mathematics
 This document explains:
 - **Mathematical foundations** - Why quadratic formula? Why deltaTick?
 - **Architecture details** - Complete hook structure and execution flow
-- **Gas optimizations** - How we achieved 3x efficiency improvement
+- **Gas optimizations** - Efficient implementation details
 - **Security analysis** - Edge cases, attack vectors, and mitigations
 - **Design decisions** - Comparison with other solutions
 
@@ -212,7 +212,7 @@ The hook can be configured with the following parameters:
 - **`k1`**: Linear coefficient for deltaTick (constant: 5 = 0.5 scaled x10)
 - **`k2`**: Quadratic coefficient for deltaTick (constant: 2 = 0.2 scaled x10)
 
-**Note:** This version uses a continuous quadratic formula instead of discrete thresholds, making it more elegant and efficient. The formula is: `fee = baseFee + k1*deltaTick + k2*deltaTick²`
+**Note:** The hook uses a continuous quadratic formula: `fee = baseFee + k1*deltaTick + k2*deltaTick²`
 
 ### Setting Parameters
 
@@ -263,7 +263,7 @@ forge test --fork-url $RPC_URL
 
 - **MEV Reduction**: 30-50% in stable pairs (estimated)
 - **Dynamic Fee**: 5 bps (normal, deltaTick=0) → 60 bps (high risk, deltaTick≥15)
-- **Gas Cost**: ~900 gas per swap (3x more efficient than previous version)
+- **Gas Cost**: ~900 gas per swap
 - **Detection**: Based on `deltaTick` - more precise for stables than price delta
 - **Test Coverage**: 26 comprehensive tests (unit, integration, edge cases)
 
