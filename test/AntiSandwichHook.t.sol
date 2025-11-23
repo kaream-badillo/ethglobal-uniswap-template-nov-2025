@@ -107,6 +107,14 @@ contract AntiSandwichHookTest is BaseTest {
         // Get lastTick from hook storage
         (int24 lastTickBefore,) = hook.getPoolMetrics(poolId);
         
+        // Get pool configuration from hook
+        AntiSandwichHook.PoolStorage memory config = hook.getPoolConfig(poolId);
+        uint24 baseFee = config.baseFee;
+        uint24 maxFee = config.maxFee;
+        // Use defaults if not configured
+        if (baseFee == 0) baseFee = DEFAULT_BASE_FEE;
+        if (maxFee == 0) maxFee = DEFAULT_MAX_FEE;
+        
         // Perform swap
         BalanceDelta swapDelta = swapRouter.swapExactTokensForTokens({
             amountIn: amountIn,
@@ -132,15 +140,15 @@ contract AntiSandwichHookTest is BaseTest {
             deltaTick = tickDiff;
         }
 
-        // Calculate expected fee using quadratic formula
-        uint256 expectedFee = uint256(DEFAULT_BASE_FEE);
+        // Calculate expected fee using quadratic formula with actual config
+        uint256 expectedFee = uint256(baseFee);
         if (deltaTick > 0) {
             uint256 deltaTickUint = uint256(uint24(deltaTick));
             expectedFee += (uint256(K1) * deltaTickUint) / 10;
             expectedFee += (uint256(K2) * deltaTickUint * deltaTickUint) / 10;
         }
-        if (expectedFee > DEFAULT_MAX_FEE) {
-            expectedFee = DEFAULT_MAX_FEE;
+        if (expectedFee > maxFee) {
+            expectedFee = maxFee;
         }
         appliedFee = uint24(expectedFee);
 
@@ -170,7 +178,7 @@ contract AntiSandwichHookTest is BaseTest {
 
         // Verify metrics updated after swap
         (int24 newLastTick, uint256 newAvgTradeSize) = hook.getPoolMetrics(poolId);
-        assertGt(newLastTick, 0, "lastTick should be updated after swap");
+        assertNotEq(newLastTick, 0, "lastTick should be updated after swap (can be negative)");
         assertEq(newAvgTradeSize, amountIn, "avgTradeSize should be initialized with first swap size");
     }
 
@@ -340,6 +348,16 @@ contract AntiSandwichHookTest is BaseTest {
 
     /// @notice Test that setPoolConfig reverts for non-owner
     function test_SetPoolConfig_OnlyOwner() public {
+        // Verify owner is set (should be the deployer/this contract)
+        address owner = hook.owner();
+        assertTrue(owner != address(0), "Owner should be set");
+        
+        // Try to call as non-owner (this contract is not the owner if deployCodeTo changes msg.sender)
+        // If this contract is the owner, we need to use a different address
+        address nonOwner = address(0x1234);
+        vm.assume(nonOwner != owner); // Skip if somehow nonOwner == owner
+        
+        vm.prank(nonOwner);
         vm.expectRevert("AntiSandwichHook: caller is not the owner");
         hook.setPoolConfig(poolKey, 10, 80);
     }
@@ -382,11 +400,17 @@ contract AntiSandwichHookTest is BaseTest {
     /// @notice Test that MetricsUpdated event is emitted
     function test_MetricsUpdatedEvent() public {
         // First swap - should emit event
-        vm.expectEmit(true, false, false, true);
-        // We can't predict exact tick, so we use any value
+        // We can't predict exact tick value, so we check the event structure
+        vm.expectEmit(true, false, false, false);
+        // Check poolId matches, but allow any values for tick and avgTradeSize
         emit AntiSandwichHook.MetricsUpdated(poolId, 0, 0);
         
         performSwap(1e18, true);
+        
+        // Verify the event was emitted by checking metrics were updated
+        (int24 lastTick, uint256 avgTradeSize) = hook.getPoolMetrics(poolId);
+        assertNotEq(lastTick, 0, "lastTick should be updated");
+        assertEq(avgTradeSize, 1e18, "avgTradeSize should be updated");
     }
 
     // ============================================================
