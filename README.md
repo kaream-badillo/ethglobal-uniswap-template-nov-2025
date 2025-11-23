@@ -151,6 +151,23 @@ forge test --fork-url $RPC_URL
 forge test --match-test test_SandwichPatternDetection
 ```
 
+### Demo
+
+**🚀 Want to see the hook in action?** Check out our [Demo Setup Instructions](docs/DEMO_SETUP.md)!
+
+The demo shows:
+- Normal swaps (low fee: 5 bps)
+- Risky swaps (dynamic fee based on deltaTick)
+- Very risky swaps (max fee: 60 bps)
+
+**Quick demo:**
+```bash
+# Run demo script
+forge script script/demo/DemoAntiSandwichHook.s.sol --fork-url $RPC_URL
+```
+
+For detailed setup instructions, see [docs/DEMO_SETUP.md](docs/DEMO_SETUP.md).
+
 ---
 
 ## 📋 Configuration
