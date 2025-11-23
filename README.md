@@ -135,8 +135,8 @@ For instructions on running the functional demo, see:
 
 ```bash
 # Clone the repository
-git clone https://github.com/kaream-badillo/ethglobal-uniswap-template-nov-2025.git
-cd ethglobal-uniswap-template-nov-2025
+git clone https://github.com/kaream-badillo/ethglobal-uniswap-2025.git
+cd ethglobal-uniswap-2025
 
 # Install dependencies
 forge install
