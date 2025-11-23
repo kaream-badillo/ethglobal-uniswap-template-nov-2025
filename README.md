@@ -283,13 +283,36 @@ forge test --fork-url $RPC_URL
 **Track**: Track 1 - Stable-Asset Hooks ($10,000 prize pool)  
 **Organizer**: Uniswap Foundation
 
+### 📍 Live Deployment (Sepolia Testnet)
+
+**Network**: Sepolia Testnet (Chain ID: 11155111)  
+**Status**: ✅ **Deployed & Verified**
+
+| Contract | Address | Explorer | Status |
+|----------|---------|----------|--------|
+| **AntiSandwichHook** | `0x5AebB929DA77cCDFE141CeB2Af210FaA3905c0c0` | [View on Etherscan](https://sepolia.etherscan.io/address/0x5AebB929DA77cCDFE141CeB2Af210FaA3905c0c0) | ✅ Verified |
+| **PoolManager** | `0xE03A1074c86CFeDd5C142C4F04F1a1536e203543` | [View on Etherscan](https://sepolia.etherscan.io/address/0xE03A1074c86CFeDd5C142C4F04F1a1536e203543) | - |
+
+**Deployment Transaction:**
+- **TxID**: `0x7e6ec6449bde638070630a78cf781feee26808c44505a57389fe567d61ab2e57`
+- **Block**: 9687527
+- **Explorer**: [View Transaction](https://sepolia.etherscan.io/tx/0x7e6ec6449bde638070630a78cf781feee26808c44505a57389fe567d61ab2e57)
+
+**Contract Verification:**
+- ✅ **Verified on Etherscan** - Source code is publicly visible
+- **Verified Contract**: [View Verified Code](https://sepolia.etherscan.io/address/0x5AebB929DA77cCDFE141CeB2Af210FaA3905c0c0#code)
+- **Verification GUID**: `vni6yibrsxe2ueuwgc55tmb2tj5t2ljk1dzmgqjs7sxinxfwvl`
+
+> 📖 **For complete deployment information, see**: `docs-internos/INFO-HACKATHON.md`
+
 ### Deliverables
 
 - ✅ TxIDs of transactions (testnet/mainnet)
+- ✅ Contract verified on Etherscan (source code publicly visible)
 - ✅ Public GitHub repository
 - ✅ Complete README.md
-- ✅ Functional demo or installation instructions
-- ✅ Demo video (max 3 minutes, English with subtitles)
+- ⚪ Functional demo or installation instructions
+- ⚪ Demo video (max 3 minutes, English with subtitles)
 
 ### Track Alignment
 
