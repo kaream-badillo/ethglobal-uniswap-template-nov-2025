@@ -49,11 +49,15 @@ contract DemoAntiSandwichHook is Script {
     int24 constant TICK_SPACING = 60;
 
     function setUp() public {
-        // Get PoolManager from chainId
+        // Get PoolManager from chainId (only needed if using fork)
+        // For simulation mode, we don't need to interact with poolManager
         uint256 chainId = block.chainid;
-        poolManager = IPoolManager(AddressConstants.getPoolManagerAddress(chainId));
+        if (chainId != 31337) {
+            // Only get PoolManager if not in local simulation
+            poolManager = IPoolManager(AddressConstants.getPoolManagerAddress(chainId));
+        }
         
-        // Get hook instance
+        // Get hook instance (address is constant, works in any mode)
         hook = AntiSandwichHook(DEPLOYED_HOOK);
     }
 
@@ -62,51 +66,22 @@ contract DemoAntiSandwichHook is Script {
         console2.log("AntiSandwichHook Demo");
         console2.log("==========================================");
         console2.log("Hook Address:", address(hook));
-        console2.log("PoolManager:", address(poolManager));
         console2.log("Chain ID:", block.chainid);
-        console2.log("");
-
-        // Create pool key
-        PoolKey memory poolKey = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            fee: POOL_FEE,
-            tickSpacing: TICK_SPACING,
-            hooks: IHooks(address(hook))
-        });
-        
-        PoolId poolId = poolKey.toId();
-        
-        console2.log("Pool ID:", vm.toString(poolId));
+        console2.log("Mode: Simulation (no fork required)");
         console2.log("");
 
         // ============================================================
-        // Scenario 1: Normal Swap (deltaTick ≈ 0)
+        // Scenario 1: Normal Swap (deltaTick = 0)
         // ============================================================
         
         console2.log("==========================================");
         console2.log("SCENARIO 1: Normal Swap (Low Risk)");
         console2.log("==========================================");
         
-        // Get current pool state
-        (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(poolId);
-        console2.log("Current Tick:", currentTick);
-        
-        // Get hook metrics
-        (int24 lastTick, uint256 avgTradeSize) = hook.getPoolMetrics(poolId);
-        console2.log("Last Tick (from hook):", lastTick);
-        
-        // Calculate deltaTick
+        // Simulate normal swap scenario (deltaTick = 0)
         int24 deltaTick = 0;
-        if (lastTick != 0) {
-            if (currentTick > lastTick) {
-                deltaTick = currentTick - lastTick;
-            } else {
-                deltaTick = lastTick - currentTick;
-            }
-        }
-        
         console2.log("DeltaTick:", deltaTick);
+        console2.log("Interpretation: Normal swap in stable pair");
         console2.log("Expected Fee: 5 bps (baseFee) - Normal swap");
         console2.log("");
 
@@ -124,7 +99,7 @@ contract DemoAntiSandwichHook is Script {
         int24 simulatedDeltaTick = 3;
         console2.log("Simulated DeltaTick:", simulatedDeltaTick);
         
-        // Calculate expected fee using formula: fee = baseFee + k1*deltaTick + k2*deltaTick²
+        // Calculate expected fee using formula: fee = baseFee + k1*deltaTick + k2*deltaTick^2
         uint24 baseFee = 5; // 5 bps
         uint24 maxFee = 60; // 60 bps
         uint24 k1 = 5; // 0.5 scaled x10
@@ -142,23 +117,23 @@ contract DemoAntiSandwichHook is Script {
             calculatedFee = maxFee;
         }
         
-        console2.log("Formula: fee = baseFee + k1*deltaTick + k2*deltaTick²");
+        console2.log("Formula: fee = baseFee + k1*deltaTick + k2*deltaTick^2");
         console2.log("Calculation:");
         console2.log("  baseFee:", baseFee, "bps");
         console2.log("  k1*deltaTick:", (k1 * uint24(simulatedDeltaTick)) / 10, "bps");
-        console2.log("  k2*deltaTick²:", (k2 * uint24(simulatedDeltaTick) * uint24(simulatedDeltaTick)) / 10, "bps");
+        console2.log("  k2*deltaTick^2:", (k2 * uint24(simulatedDeltaTick) * uint24(simulatedDeltaTick)) / 10, "bps");
         console2.log("  Total Fee:", uint24(calculatedFee), "bps");
         console2.log("");
         
         // ============================================================
-        // Scenario 3: Very Risky Swap (deltaTick ≥ 4)
+        // Scenario 3: Very Risky Swap (deltaTick = 10)
         // ============================================================
         
         console2.log("==========================================");
-        console2.log("SCENARIO 3: Very Risky Swap (Max Fee)");
+        console2.log("SCENARIO 3: Very Risky Swap (deltaTick = 10)");
         console2.log("==========================================");
         
-        int24 veryRiskyDeltaTick = 4;
+        int24 veryRiskyDeltaTick = 10;
         console2.log("Simulated DeltaTick:", veryRiskyDeltaTick);
         
         uint256 veryRiskyFee = uint256(baseFee);
@@ -172,30 +147,39 @@ contract DemoAntiSandwichHook is Script {
             veryRiskyFee = maxFee;
         }
         
-        console2.log("Calculated Fee:", uint24(veryRiskyFee), "bps");
-        console2.log("Applied Fee (capped):", maxFee, "bps (maxFee)");
+        console2.log("Formula: fee = baseFee + k1*deltaTick + k2*deltaTick^2");
+        console2.log("Calculation:");
+        console2.log("  baseFee:", baseFee, "bps");
+        console2.log("  k1*deltaTick:", (k1 * uint24(veryRiskyDeltaTick)) / 10, "bps");
+        console2.log("  k2*deltaTick^2:", (k2 * uint24(veryRiskyDeltaTick) * uint24(veryRiskyDeltaTick)) / 10, "bps");
+        console2.log("  Total Fee:", uint24(veryRiskyFee), "bps");
         console2.log("");
 
         // ============================================================
-        // Summary
+        // Summary - Exact Values for Screenshot
         // ============================================================
         
         console2.log("==========================================");
-        console2.log("SUMMARY - Fee Comparison");
+        console2.log("SUMMARY - Fee Comparison (For Screenshot)");
         console2.log("==========================================");
-        console2.log("Normal Swap (deltaTick ≈ 0):");
-        console2.log("  Fee: 5 bps (baseFee)");
-        console2.log("  Risk: Low - Normal trading");
+        console2.log("deltaTick = 0 -> fee = 5 bps");
+        console2.log("deltaTick = 3 -> fee =", uint24(calculatedFee), "bps");
+        console2.log("deltaTick = 10 -> fee =", uint24(veryRiskyFee), "bps");
         console2.log("");
-        console2.log("Risky Swap (deltaTick = 3):");
-        console2.log("  Fee:", uint24(calculatedFee), "bps");
-        console2.log("  Risk: Medium - Possible sandwich attack");
-        console2.log("  Protection: Fee increases quadratically");
+        console2.log("Detailed Breakdown:");
+        console2.log("  Normal Swap (deltaTick = 0):");
+        console2.log("    Fee: 5 bps (baseFee)");
+        console2.log("    Risk: Low - Normal trading");
         console2.log("");
-        console2.log("Very Risky Swap (deltaTick ≥ 4):");
-        console2.log("  Fee: 60 bps (maxFee)");
-        console2.log("  Risk: High - Strong sandwich attack pattern");
-        console2.log("  Protection: Maximum fee applied");
+        console2.log("  Risky Swap (deltaTick = 3):");
+        console2.log("    Fee:", uint24(calculatedFee), "bps");
+        console2.log("    Risk: Medium - Possible sandwich attack");
+        console2.log("    Protection: Fee increases quadratically");
+        console2.log("");
+        console2.log("  Very Risky Swap (deltaTick = 10):");
+        console2.log("    Fee:", uint24(veryRiskyFee), "bps");
+        console2.log("    Risk: High - Strong sandwich attack pattern");
+        console2.log("    Protection: Quadratic term dominates");
         console2.log("");
         console2.log("==========================================");
         console2.log("Key Insights:");
@@ -213,12 +197,15 @@ contract DemoAntiSandwichHook is Script {
         // ============================================================
         
         console2.log("");
-        console2.log("Hook Configuration:");
-        AntiSandwichHook.PoolStorage memory config = hook.getPoolConfig(poolId);
-        console2.log("  Base Fee:", config.baseFee, "bps");
-        console2.log("  Max Fee:", config.maxFee, "bps");
-        console2.log("  Last Tick:", config.lastTick);
-        console2.log("  Avg Trade Size:", config.avgTradeSize);
+        console2.log("Hook Configuration (Default Values):");
+        console2.log("  Base Fee: 5 bps (0.05%)");
+        console2.log("  Max Fee: 60 bps (0.60%)");
+        console2.log("  Formula: fee = baseFee + k1*deltaTick + k2*deltaTick^2");
+        console2.log("  k1: 5 (0.5 scaled x10)");
+        console2.log("  k2: 2 (0.2 scaled x10)");
+        console2.log("");
+        console2.log("Note: Configuration can be updated by hook owner");
+        console2.log("      using setPoolConfig() function");
     }
 }
 

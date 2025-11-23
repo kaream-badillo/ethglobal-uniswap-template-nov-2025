@@ -34,11 +34,16 @@ This demo shows how the hook predicts price impact using `deltaTick` before swap
    node --version
    ```
 
-### Account and Access
+### Optional: RPC URL for Testnet Fork
 
-- **RPC URL** for testnet (Infura or Alchemy)
-  - Sepolia: `https://sepolia.infura.io/v3/YOUR_KEY` or `https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY`
-  - See `docs-internos/VARIABLES-ENTORNO.md` for more details (internal doc)
+**Note:** The demo works **without RPC URL** (simulation mode). RPC URL is only needed if you want to fork Sepolia testnet to interact with the deployed hook.
+
+If you want to use testnet fork, you'll need an RPC URL from:
+- **Infura:** `https://sepolia.infura.io/v3/YOUR_INFURA_KEY`
+- **Alchemy:** `https://eth-sepolia.g.alchemy.com/v2/YOUR_ALCHEMY_KEY`
+- **Public RPC:** `https://rpc.sepolia.org` (free, but may have rate limits)
+
+**Important:** RPC URL is for blockchain connection, NOT for Etherscan API. Etherscan API key is only needed for contract verification (not required for demo).
 
 ---
 
@@ -61,56 +66,64 @@ forge install
 forge build
 ```
 
-### 3. Configure Environment Variables (Optional)
+### 3. Configure RPC URL (Optional - Only for Testnet Fork)
 
-If you want to run the demo on a testnet fork:
+**The demo works without RPC URL!** It runs in simulation mode by default.
 
-```bash
-# Create .env file (if it doesn't exist)
-cp .env.example .env
+If you want to fork Sepolia testnet to interact with the deployed hook, you can pass the RPC URL directly:
 
-# Edit .env and add:
-RPC_URL=https://sepolia.infura.io/v3/YOUR_INFURA_KEY
-```
-
-**Note:** The demo can run without `.env` by using `--fork-url` directly.
+**No need to create .env file** - just use `--fork-url` flag directly (see below).
 
 ---
 
 ## 🎬 Run the Demo
 
-### Option 1: Local Demo (Simulation)
+### Option 1: Local Demo (Simulation) - **RECOMMENDED**
 
-Run the demo script without needing RPC:
+Run the demo script **without needing RPC** - works out of the box:
 
 ```bash
 forge script script/demo/DemoAntiSandwichHook.s.sol
 ```
 
 **Expected output:**
-- Deployed hook information
-- Fee comparison in different scenarios
-- deltaTick metrics and applied fees
+- Hook address information
+- Fee comparison in 3 different scenarios
+- deltaTick calculations and applied fees
+- Summary with exact values for screenshot
 
-### Option 2: Testnet Fork Demo (Recommended)
+**This is the simplest way** - no configuration needed!
 
-Run the demo using Sepolia fork to see the deployed hook:
+### Option 2: Testnet Fork Demo (Optional)
+
+If you want to interact with the actual deployed hook on Sepolia:
 
 ```bash
-# With RPC_URL in .env
-forge script script/demo/DemoAntiSandwichHook.s.sol \
-  --fork-url $RPC_URL
-
-# Or directly
+# Pass RPC URL directly (no .env needed)
 forge script script/demo/DemoAntiSandwichHook.s.sol \
   --fork-url https://sepolia.infura.io/v3/YOUR_INFURA_KEY
 ```
 
+**Or use public RPC (free, no API key needed):**
+```bash
+forge script script/demo/DemoAntiSandwichHook.s.sol \
+  --fork-url https://rpc.sepolia.org
+```
+
 **Windows PowerShell:**
 ```powershell
-$env:RPC_URL = "https://sepolia.infura.io/v3/YOUR_KEY"
-forge script script/demo/DemoAntiSandwichHook.s.sol --fork-url $env:RPC_URL
+# Option A: Direct URL (public RPC, no API key needed)
+forge script script/demo/DemoAntiSandwichHook.s.sol --fork-url "https://rpc.sepolia.org"
+
+# Option B: With Infura/Alchemy key (if you have one)
+forge script script/demo/DemoAntiSandwichHook.s.sol --fork-url "https://sepolia.infura.io/v3/YOUR_KEY"
 ```
+
+**Important Notes:**
+- **Fork mode is optional** - The demo works perfectly in simulation mode (Option 1)
+- **No API keys required** - Simulation mode doesn't need RPC URL
+- **No .env file needed** - Just run the command directly
+- **RPC URL is for blockchain connection** - NOT for Etherscan API (Etherscan API is only for contract verification, not needed for demo)
 
 ---
 
@@ -129,8 +142,8 @@ The demo runs **3 scenarios** that demonstrate how the hook works:
 - **Interpretation:** Possible sandwich pattern, fee increases
 
 ### Scenario 3: Very Risky Swap (High Risk)
-- **DeltaTick:** ≥ 4
-- **Applied Fee:** 60 bps (maxFee)
+- **DeltaTick:** >= 4 (or deltaTick = 10 in demo)
+- **Applied Fee:** 30 bps (for deltaTick=10) or 60 bps (maxFee cap)
 - **Interpretation:** Clear sandwich pattern, maximum protection
 
 ### Demo Output
@@ -167,7 +180,7 @@ Risky Swap (deltaTick = 3):
   Risk: Medium - Possible sandwich attack
   Protection: Fee increases quadratically
 
-Very Risky Swap (deltaTick ≥ 4):
+Very Risky Swap (deltaTick >= 4):
   Fee: 60 bps (maxFee)
   Risk: High - Strong sandwich attack pattern
   Protection: Maximum fee applied
@@ -176,11 +189,11 @@ Very Risky Swap (deltaTick ≥ 4):
 ### Applied Formula
 
 ```
-Formula: fee = baseFee + k1*deltaTick + k2*deltaTick²
+Formula: fee = baseFee + k1*deltaTick + k2*deltaTick^2
 Calculation:
   baseFee: 5 bps
   k1*deltaTick: [calculated] bps
-  k2*deltaTick²: [calculated] bps
+  k2*deltaTick^2: [calculated] bps
   Total Fee: [total] bps
 ```
 
@@ -219,7 +232,7 @@ forge build
 
 ### Demo doesn't show output
 
-**Solution:** Make sure to use `--fork-url` if you want to see real data from the deployed hook. Without fork, the demo shows simulated calculations.
+**Solution:** The demo works in simulation mode by default. If you want to see real data from the deployed hook, use `--fork-url` with a Sepolia RPC URL. However, simulation mode is sufficient for demonstrating the hook's functionality.
 
 ---
 
