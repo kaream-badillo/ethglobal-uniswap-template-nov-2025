@@ -248,7 +248,7 @@ forge test --match-test test_DeltaTickCalculation
 forge test --match-test test_DynamicFeeCalculation
 forge test --match-test test_SandwichPatternDetection
 
-# With gas report
+# With gas report 
 forge test --gas-report
 
 # Fork tests (requires RPC_URL)
@@ -422,10 +422,6 @@ For questions or feedback, please open an issue in the repository or contact via
 **Event:** ETHGlobal Buenos Aires (November 2025)  
 **Track:** Track 1 - Stable-Asset Hooks ($10,000 prize pool)  
 **Organizer:** Uniswap Foundation  
-**Prize Structure:**
-- 🥇 1st place: $4,000
-- 🥈 2nd place: $2,000 × 2
-- 🥉 3rd place: $1,000 × 2
 
 **Project Alignment:**
 - ✅ Optimized stable AMM logic (dynamic fee anti-sandwich)
